@@ -179,3 +179,78 @@ class FixedGridODESolver(metaclass=abc.ABCMeta):
             return y1
         slope = (t - t0) / (t1 - t0)
         return y0 + slope * (y1 - y0)
+
+class AdaptiveGridODESolver(FixedGridODESolver):
+
+    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, **unused_kwargs):
+        self.atol = atol
+        unused_kwargs.pop('rtol', None)
+        unused_kwargs.pop('norm', None)
+        _handle_unused_kwargs(self, unused_kwargs)
+        del unused_kwargs
+
+        self.func = func
+        self.y0 = y0
+        self.dtype = y0.dtype
+        self.device = y0.device
+        self.step_size = step_size
+        self.interp = interp
+        self.perturb = perturb
+        self.grid_constructor = self._grid_constructor_from_step_size(step_size)
+        self.estis = torch.ones(self.time_grid.size())*torch.inf
+        self.theta=theta
+        
+    
+    @abc.abstractmethod
+    def eval_estimator(self, t0, dt, t1, y0, y1):
+        pass
+
+    @staticmethod
+    def refine_grid(self,grid,estis):
+        sorted_idx=torch.argsort(estis,descending=True)
+        sorted_estis=estis[sorted_idx]
+        cumsum=torch.cumsum(sorted_estis)
+        idx=torch.argmax(cumsum>=self.theta*cumsum[-1])
+        marked=sorted_idx[range(idx+1)]
+        new_vs=(grid[marked]+grid[marked+1])/2
+        new_grid=torch.sort(torch.cat((grid,new_vs)))
+        return new_grid
+    
+    def integrate(self, t):
+        
+        time_grid=self.grid_constructor(self.func,y0,t)
+        
+        while(sum(self.estis)>self.atol):
+
+            self.estis = torch.zeros(self.time_grid.size())  
+            assert self.time_grid[0] == t[0] and self.time_grid[-1] == t[-1]
+
+            solution = torch.empty(len(t), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
+            solution[0] = self.y0
+
+            j = 1
+            i = 0
+            y0 = self.y0
+            for t0, t1 in zip(self.time_grid[:-1], self.time_grid[1:]):
+                dt = t1 - t0
+                self.func.callback_step(t0, y0, dt)
+                dy, f0 = self._step_func(self.func, t0, dt, t1, y0)
+                y1 = y0 + dy
+                self.estis[i] = self.eval_estimator(self.func, t0 , dt , t1, y0, y1)
+                i=i+1
+
+                while j < len(t) and t1 >= t[j]:
+                    if self.interp == "linear":
+                        solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
+                    elif self.interp == "cubic":
+                        f1 = self.func(t1, y1)
+                        solution[j] = self._cubic_hermite_interp(t0, y0, f0, t1, y1, f1, t[j])
+                    else:
+                        raise ValueError(f"Unknown interpolation method {self.interp}")
+                    j += 1
+                y0 = y1
+            time_grid=self.refine_grid(time_grid,self.estis)
+
+        return solution
+        
+   

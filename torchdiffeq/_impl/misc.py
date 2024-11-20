@@ -287,6 +287,16 @@ def _check_inputs(func, y0, t, rtol, atol, method, options, event_fn, SOLVERS):
             pass
         else:
             options['grid_constructor'] = lambda func, y0, t: -_grid_constructor(func, y0, -t)
+        
+        #for adaptive grid solvers:
+        try:
+            _dtfunc = options['dtfunc']
+            _dyfunc = options['dyfunc']
+        except KeyError:
+            pass
+        else:
+            options['dtfunc'] = _ReverseFunc(_dtfunc,mul=1)
+            options['dyfunc'] = _ReverseFunc(_dyfunc,mul=-1)
 
         # For RK solvers.
         _flip_option(options, 'step_t')
