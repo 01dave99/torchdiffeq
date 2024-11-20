@@ -10,9 +10,10 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
 
     def _step_func(self, func, t0, dt, t1, y0):
         def optim_f(y):
+            y=torch.tensor(y)
             return y-y0-(t1-t0)*(func(t1,y)+func(t0,y0))/2
         root=sci.optimize.fsolve(optim_f,y0)
-        return root, func(t0,y0)
+        return torch.tensor(root), func(t0,y0)
     
     def eval_estimator(self, t0, dt, t1, y0, y1):
         esti=sci.integrate.quad(lambda t: torch.linalg.norm((self.dtfunc(t,y0+(y1-y0)/(t1-t0)*(t-t0))+torch.matmul(self.dyfunc(t,y0+(y1-y0)/(t1-t0)*(t-t0)),(y1-y0)/(t1-t0))))**2,t0,t1)

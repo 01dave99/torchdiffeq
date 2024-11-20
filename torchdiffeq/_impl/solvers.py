@@ -197,7 +197,6 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         self.interp = interp
         self.perturb = perturb
         self.grid_constructor = self._grid_constructor_from_step_size(step_size)
-        self.estis = torch.ones(self.time_grid.size())*torch.inf
         self.theta=theta
         
     
@@ -209,37 +208,36 @@ class AdaptiveGridODESolver(FixedGridODESolver):
     def refine_grid(self,grid,estis):
         sorted_idx=torch.argsort(estis,descending=True)
         sorted_estis=estis[sorted_idx]
-        cumsum=torch.cumsum(sorted_estis)
-        idx=torch.argmax(cumsum>=self.theta*cumsum[-1])
+        cumsum=torch.cumsum(sorted_estis,0)
+        cumsum_bool=(cumsum>=self.theta*cumsum[-1])*1
+        idx=torch.argmax(cumsum_bool)
         marked=sorted_idx[range(idx+1)]
-        new_vs=(grid[marked]+grid[marked+1])/2
-        new_grid=torch.sort(torch.cat((grid,new_vs)))
+        new_vs=torch.tensor((grid[marked]+grid[marked+1])/2)
+        new_grid,idxs=torch.sort(torch.cat((grid,new_vs)))
         return new_grid
     
     def integrate(self, t):
         
-        time_grid=self.grid_constructor(self.func,y0,t)
-        
-        while(sum(self.estis)>self.atol):
+        time_grid=self.grid_constructor(self.func,self.y0,t)
+        estis = torch.ones(time_grid.size())*torch.inf
+        solution = torch.empty(len(t), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
+        solution[0] = self.y0
 
-            self.estis = torch.zeros(self.time_grid.size())  
-            assert self.time_grid[0] == t[0] and self.time_grid[-1] == t[-1]
-
-            solution = torch.empty(len(t), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
-            solution[0] = self.y0
+        while(sum(estis)>self.atol):
+            estis = torch.zeros(time_grid.size()) 
+            assert time_grid[0] == t[0] and time_grid[-1] == t[-1]
 
             j = 1
             i = 0
             y0 = self.y0
-            for t0, t1 in zip(self.time_grid[:-1], self.time_grid[1:]):
+            for t0, t1 in zip(time_grid[:-1], time_grid[1:]):
                 dt = t1 - t0
                 self.func.callback_step(t0, y0, dt)
-                dy, f0 = self._step_func(self.func, t0, dt, t1, y0)
-                y1 = y0 + dy
-                self.estis[i] = self.eval_estimator(self.func, t0 , dt , t1, y0, y1)
+                y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
+                estis[i] = self.eval_estimator(t0 , dt , t1, y0, y1)
                 i=i+1
 
-                while j < len(t) and t1 >= t[j]:
+                while j < len(t) and t1 >= t[j] and t0 < t[j]:
                     if self.interp == "linear":
                         solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
                     elif self.interp == "cubic":
@@ -249,8 +247,7 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                         raise ValueError(f"Unknown interpolation method {self.interp}")
                     j += 1
                 y0 = y1
-            time_grid=self.refine_grid(time_grid,self.estis)
-
+            time_grid=self.refine_grid(self,time_grid,estis)
         return solution
         
    
