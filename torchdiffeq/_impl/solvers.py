@@ -182,7 +182,7 @@ class FixedGridODESolver(metaclass=abc.ABCMeta):
 
 class AdaptiveGridODESolver(FixedGridODESolver):
 
-    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, **unused_kwargs):
+    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False,conv_ana=False, **unused_kwargs):
         self.atol = atol
         unused_kwargs.pop('rtol', None)
         unused_kwargs.pop('norm', None)
@@ -198,6 +198,7 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         self.perturb = perturb
         self.grid_constructor = self._grid_constructor_from_step_size(step_size)
         self.theta=theta
+        self.conv_ana=conv_ana
         
     
     @abc.abstractmethod
@@ -219,12 +220,16 @@ class AdaptiveGridODESolver(FixedGridODESolver):
     def integrate(self, t):
         
         time_grid=self.grid_constructor(self.func,self.y0,t)
-        estis = torch.ones(time_grid.size())*torch.inf
+        if self.conv_ana:
+            len_grids=torch.tensor([time_grid.size(0)])
+            estis_per=torch.tensor([torch.inf])
+        estis = torch.ones(time_grid.size(),dtype=self.y0.dtype,device=self.y0.device)*torch.inf
         solution = torch.empty(len(t), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
         solution[0] = self.y0
 
-        while(sum(estis)>self.atol):
-            estis = torch.zeros(time_grid.size()) 
+        while(torch.sum(estis)>self.atol):
+            estis = torch.zeros(time_grid.size())
+             
             assert time_grid[0] == t[0] and time_grid[-1] == t[-1]
 
             j = 1
@@ -248,6 +253,14 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                     j += 1
                 y0 = y1
             time_grid=self.refine_grid(self,time_grid,estis)
-        return solution
-        
+            if self.conv_ana:
+                len_grids=torch.cat((len_grids,torch.tensor([time_grid.size(0)])))
+                if torch.max(estis_per)<torch.inf:
+                    estis_per=torch.cat((estis_per,torch.tensor([torch.sum(estis)])))
+                else:
+                    estis_per=torch.tensor([torch.sum(estis)])
+        if self.conv_ana:
+            return solution, len_grids, estis_per
+        else:
+            return solution
    
