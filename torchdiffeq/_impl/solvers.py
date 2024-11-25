@@ -213,7 +213,7 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         cumsum_bool=(cumsum>=self.theta*cumsum[-1])*1
         idx=torch.argmax(cumsum_bool)
         marked=sorted_idx[range(idx+1)]
-        new_vs=torch.tensor((grid[marked]+grid[marked+1])/2)
+        new_vs=(grid.clone().detach()[marked]+grid.clone().detach()[marked+1])/2
         new_grid,idxs=torch.sort(torch.cat((grid,new_vs)))
         return new_grid
     
