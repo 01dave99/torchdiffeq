@@ -2,6 +2,7 @@ import abc
 import torch
 from .event_handling import find_event
 from .misc import _handle_unused_kwargs
+from pathlib import Path
 
 
 class AdaptiveStepsizeODESolver(metaclass=abc.ABCMeta):
@@ -182,7 +183,7 @@ class FixedGridODESolver(metaclass=abc.ABCMeta):
 
 class AdaptiveGridODESolver(FixedGridODESolver):
 
-    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False,conv_ana=False, **unused_kwargs):
+    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, faster_adj_solve=False,adjoint_params=None, conv_ana=False,file_id="None", **unused_kwargs):
         self.atol = atol
         unused_kwargs.pop('rtol', None)
         unused_kwargs.pop('norm', None)
@@ -199,21 +200,35 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         self.grid_constructor = self._grid_constructor_from_step_size(step_size)
         self.theta=theta
         self.conv_ana=conv_ana
-        
+        self.file_id=file_id
+        self.faster_adj_solve=faster_adj_solve
+        self.adjoint_params=adjoint_params
+
+    @abc.abstractmethod
+    def _step_func_adjoint(self, func, t0, dt, t1, y0):
+        pass    
     
     @abc.abstractmethod
     def eval_estimator(self, t0, dt, t1, y0, y1):
         pass
 
+    @abc.abstractmethod
+    def eval_estimator_adjoint(self,t0,dt,t1,y0,y1):
+        pass
+
     @staticmethod
     def refine_grid(self,grid,estis):
+        if self.theta==1.:
+            new_vs=(grid.clone().detach()[:-1]+grid.clone().detach()[1:])/2.
+            new_grid,idxs=torch.sort(torch.cat((grid,new_vs)))
+            return new_grid
         sorted_idx=torch.argsort(estis,descending=True)
         sorted_estis=estis[sorted_idx]
         cumsum=torch.cumsum(sorted_estis,0)
         cumsum_bool=(cumsum>=self.theta*cumsum[-1])*1
         idx=torch.argmax(cumsum_bool)
         marked=sorted_idx[range(idx+1)]
-        new_vs=(grid.clone().detach()[marked]+grid.clone().detach()[marked+1])/2
+        new_vs=(grid.clone().detach()[marked]+grid.clone().detach()[marked+1])/2.
         new_grid,idxs=torch.sort(torch.cat((grid,new_vs)))
         return new_grid
     
@@ -228,8 +243,10 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         solution[0] = self.y0
 
         while(torch.sum(estis)>self.atol):
-            estis = torch.zeros(time_grid.size())
-             
+            estis = torch.zeros(time_grid.size(0)-1)
+            if self.conv_ana:
+                sol_grid=torch.empty(len(time_grid), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
+                sol_grid[0]=self.y0
             assert time_grid[0] == t[0] and time_grid[-1] == t[-1]
 
             j = 1
@@ -238,10 +255,16 @@ class AdaptiveGridODESolver(FixedGridODESolver):
             for t0, t1 in zip(time_grid[:-1], time_grid[1:]):
                 dt = t1 - t0
                 self.func.callback_step(t0, y0, dt)
-                y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
-                estis[i] = self.eval_estimator(t0 , dt , t1, y0, y1)
+                
+                if self.faster_adj_solve:
+                    y1, f0 = self._step_func_adjoint(self.func, t0, dt, t1, y0)
+                    estis[i] = self.eval_estimator_adjoint(t0 , dt , t1, y0, y1)
+                else:
+                    y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
+                    estis[i] = self.eval_estimator(t0 , dt , t1, y0, y1)
+                if self.conv_ana:    
+                    sol_grid[i+1]=y1
                 i=i+1
-
                 while j < len(t) and t1 >= t[j] and t0 < t[j]:
                     if self.interp == "linear":
                         solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
@@ -257,10 +280,17 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                 len_grids=torch.cat((len_grids,torch.tensor([time_grid.size(0)])))
                 if torch.max(estis_per)<torch.inf:
                     estis_per=torch.cat((estis_per,torch.tensor([torch.sum(estis)])))
+                    sols.append(sol_grid)
                 else:
                     estis_per=torch.tensor([torch.sum(estis)])
+                    sols=[sol_grid]
         if self.conv_ana:
-            return solution, len_grids, estis_per
+            Path("results/").mkdir(parents=True, exist_ok=True)
+            sols=torch.cat(sols,dim=0)
+            torch.save(len_grids,"results/len_grids_"+self.file_id+".pt")
+            torch.save(estis_per,"results/estis_"+self.file_id+".pt")
+            torch.save(sols,"results/sols_"+self.file_id+".pt")
+            return solution
         else:
             return solution
    
