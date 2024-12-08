@@ -9,6 +9,8 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
 
     def _step_func(self, func, t0, dt, t1, y0):
         y0_np=y0.detach().cpu().numpy().reshape(-1)
+        t0_np=t0.detach().cpu().numpy().reshape(-1)
+        t1_np=t1.detach().cpu().numpy().reshape(-1)
         def np_func(t, y):
             t = torch.tensor(t).to(y0.device, y0.dtype)
             y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0.shape)
@@ -16,8 +18,9 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
                 f = func(t, y)
             return f.detach().cpu().numpy().reshape(-1)
         def optim_f(y):
-            return y-y0_np-(t1.detach().cpu().numpy().reshape(-1)-t0.detach().cpu().numpy().reshape(-1))*(np_func(t1.detach().cpu().numpy().reshape(-1),y)+np_func(t0.detach().cpu().numpy().reshape(-1),y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np)
+            return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
+        root=sci.optimize.root(optim_f,y0_np,options={'xtol':1e-10})
+        #print(root['success'])
         tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0.shape)
         return tr, func(t0,y0)
     
@@ -35,8 +38,8 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
                 f = func(t, yfull)[range(len(y0)-num_paras)]
             return f.detach().cpu().numpy().reshape(-1)
         def optim_f(y):
-            return y-y0_np-(t1.detach().cpu().numpy().reshape(-1)-t0.detach().cpu().numpy().reshape(-1))*(np_func(t1.detach().cpu().numpy().reshape(-1),y)+np_func(t0.detach().cpu().numpy().reshape(-1),y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np)
+            return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
+        root=sci.optimize.root(optim_f,y0_np,tol=1e-14)
         tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
         #restlichen variablen:
         frest0=func(t0,y0)[range(-num_paras,0)]
@@ -50,29 +53,24 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
         y1_np=y1.detach().cpu().numpy().reshape(-1)
         t0_np=t0.detach().cpu().numpy().reshape(-1)
         t1_np=t1.detach().cpu().numpy().reshape(-1)
-        def dtfunc(t,y):
-            def tfunc(t):
-                return self.func(t,y)
-            
-            return torch.autograd.functional.jacobian(tfunc,t)
+        
+       
         def np_dtfunc(t,y):
             t = torch.tensor(t).to(y0.device, y0.dtype)
             y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0.shape)
             with torch.no_grad():
-                f = dtfunc(t, y)
+                f = self.dtfunc(t, y)
             return f.detach().cpu().numpy().reshape(-1)
-        def dyfunc(t,y,v):
-            def yfunc(y):
-                return self.func(t,y)
-            output, jvp = torch.autograd.functional.jvp(yfunc,y,v)
-            return jvp
+        
+        
         def np_dyfunc(t,y,v):
             t = torch.tensor(t).to(y0.device, y0.dtype)
             y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0.shape)
             v = torch.reshape(torch.tensor(v).to(y0.device, y0.dtype), y0.shape)
             with torch.no_grad():
-                f = dyfunc(t, y, v)
+                f = self.dyfunc(t, y, v)
             return f.detach().cpu().numpy().reshape(-1)
+        
         def integrand(s):
             value=np.zeros(len(s))
             for i in range(len(s)):
@@ -87,30 +85,25 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
         y1_np=y1[range(len(y0)-num_paras)].detach().cpu().numpy().reshape(-1)
         t0_np=t0.detach().cpu().numpy().reshape(-1)
         t1_np=t1.detach().cpu().numpy().reshape(-1)
-        def dtfunc(t,y):
-            yfull=torch.cat((y,torch.zeros(num_paras)))
-            def tfunc(t):
-                return self.func(t,yfull)[range(len(y0)-num_paras)]
-            return torch.autograd.functional.jacobian(tfunc,t)
+
         def np_dtfunc(t,y):
             y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
+            yfull=torch.cat((y,torch.zeros(num_paras)))
             t = torch.tensor(t).to(y0.device, y0.dtype)
             with torch.no_grad():
-                f = dtfunc(t, y)
+                f = self.dtfunc(t, yfull)
             return f.detach().cpu().numpy().reshape(-1)
-        def dyfunc(t,y,v):
-            def yfunc(y):
-                yfull=torch.cat((y,torch.zeros(num_paras)))
-                return self.func(t,yfull)[range(len(y0)-num_paras)]
-            output, jvp = torch.autograd.functional.jvp(yfunc,y,v)
-            return jvp
+        
         def np_dyfunc(t,y,v):
             t = torch.tensor(t).to(y0.device, y0.dtype)
             y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
+            yfull=torch.cat((y,torch.zeros(num_paras)))
             v = torch.reshape(torch.tensor(v).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
+            vfull=torch.cat((v,torch.zeros(num_paras)))
             with torch.no_grad():
-                f = dyfunc(t, y, v)
+                f = self.dyfunc(t, yfull, vfull)
             return f.detach().cpu().numpy().reshape(-1)
+        
         def integrand(s):
             value=np.zeros(len(s))
             for i in range(len(s)):

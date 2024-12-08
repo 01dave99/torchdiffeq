@@ -63,7 +63,9 @@ class OdeintAdjointMethod(torch.autograd.Function):
             # [-1] because y and grad_y are both of shape (len(t), *y0.shape)
             aug_state = [torch.zeros((), dtype=y.dtype, device=y.device), y[-1], grad_y[-1]]  # vjp_t, y, vjp_y
             aug_state.extend([torch.zeros_like(param) for param in adjoint_params])  # vjp_params
-
+            #shapes of adjoint for second derivatives:
+            shapes = [y0_.shape for y0_ in tuple(aug_state)]
+            adjoint_options['shapes'] = shapes
             ##################################
             #    Set up backward ODE func    #
             ##################################
@@ -93,7 +95,7 @@ class OdeintAdjointMethod(torch.autograd.Function):
 
                     vjp_t, vjp_y, *vjp_params = torch.autograd.grad(
                         func_eval, (t, y) + adjoint_params, -adj_y,
-                        allow_unused=True, retain_graph=True
+                        allow_unused=True, retain_graph=True,create_graph=True
                     )
 
                 # autograd.grad returns None if no gradient, set to zero.
@@ -117,6 +119,7 @@ class OdeintAdjointMethod(torch.autograd.Function):
             #       Solve adjoint ODE        #
             ##################################
 
+    
             if t_requires_grad:
                 time_vjps = torch.empty(len(t), dtype=t.dtype, device=t.device)
             else:
@@ -131,6 +134,8 @@ class OdeintAdjointMethod(torch.autograd.Function):
                     time_vjps[i] = dLd_cur_t
 
                 # Run the augmented system backwards in time.
+
+                
                 aug_state = odeint(
                     augmented_dynamics, tuple(aug_state),
                     t[i - 1:i + 1].flip(0),
@@ -203,9 +208,12 @@ def odeint_adjoint(func, y0, t, *, rtol=1e-7, atol=1e-9, method=None,faster_adj_
                           "excluded from the adjoint pass, and will not appear as a tensor in the adjoint norm.")
     if faster_adj_solve:
         adjoint_options['adjoint_params']=adjoint_params
+    
     # Convert to flattened state.
     shapes, func, y0, t, rtol, atol, method, options, event_fn, decreasing_time = _check_inputs(func, y0, t, rtol, atol, method, options, event_fn, SOLVERS)
 
+    adjoint_options['original_func']=func
+    adjoint_options['t_requires_grad'] = t.requires_grad
     # Handle the adjoint norm function.
     state_norm = options["norm"]
     handle_adjoint_norm_(adjoint_options, shapes, state_norm)
