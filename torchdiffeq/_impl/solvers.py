@@ -184,7 +184,7 @@ class FixedGridODESolver(metaclass=abc.ABCMeta):
 
 class AdaptiveGridODESolver(FixedGridODESolver):
 
-    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, faster_adj_solve=False,adjoint_params=None, conv_ana=False,file_id="None",max_nodes=1000,original_func=None,t_requires_grad=False,shapes=None, **unused_kwargs):
+    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, initial_grid=None,save_last_grid=False, faster_adj_solve=False,adjoint_params=None, conv_ana=False,file_id="None",max_nodes=100000,original_func=None,t_requires_grad=False,shapes=None, **unused_kwargs):
         self.atol = atol
         unused_kwargs.pop('rtol', None)
         unused_kwargs.pop('norm', None)
@@ -198,6 +198,8 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         self.step_size = step_size
         self.interp = interp
         self.perturb = perturb
+        self.initial_grid= initial_grid
+        self.save_last_grid=save_last_grid
         self.grid_constructor = self._grid_constructor_from_step_size(step_size)
         self.theta=theta
         self.conv_ana=conv_ana
@@ -264,6 +266,7 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                 return jvp
             self.dyfunc=dyfunc
         else:
+            self.original_func=None
             def dtfunc(t,y):
                 t = t.detach().requires_grad_(True)
                 y = y.detach().requires_grad_(True)
@@ -313,14 +316,17 @@ class AdaptiveGridODESolver(FixedGridODESolver):
     
     def integrate(self, t):
         
-        time_grid=self.grid_constructor(self.func,self.y0,t)
+        if self.initial_grid is not None:
+            time_grid=self.initial_grid
+        else:
+            time_grid=self.grid_constructor(self.func,self.y0,t)
         if self.conv_ana:
             len_grids=torch.tensor([time_grid.size(0)])
             estis_per=torch.tensor([torch.inf])
             grids=time_grid.detach().clone()
         estis = torch.ones(time_grid.size(),dtype=self.y0.dtype,device=self.y0.device)*torch.inf
 
-        while(torch.sum(estis)>self.atol and time_grid.size(0)<self.max_nodes):
+        while(torch.sqrt(torch.sum(estis))>self.atol and time_grid.size(0)<self.max_nodes):
             solution = torch.empty(len(t), *self.y0.shape, dtype=self.y0.dtype, device=self.y0.device)
             solution[0] = self.y0
             estis = torch.zeros(time_grid.size(0)-1,dtype=self.y0.dtype)
@@ -363,6 +369,11 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                         raise ValueError(f"Unknown interpolation method {self.interp}")
                     j += 1
                 y0 = y1
+            if self.save_last_grid:
+                if self.original_func is not None:
+                    torch.save(time_grid,"current_grid_adjoint.pt")
+                else:
+                    torch.save(time_grid,"current_grid.pt")
             time_grid=self.refine_grid(self,time_grid,estis)
             if self.conv_ana:
                 plt.step(time_grid[:-1],time_grid[1:]-time_grid[:-1],where="post")
