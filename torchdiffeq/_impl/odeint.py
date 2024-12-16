@@ -9,6 +9,7 @@ from .fixed_adams import AdamsBashforth, AdamsBashforthMoulton
 from .dopri8 import Dopri8Solver
 from .adaptiveCR import AdaptiveCRSolver
 from .adaptiveLobatto import AdaptiveLobattoSolver
+from .adaptiveEuler import AdaptiveEulerSolver
 from .scipy_wrapper import ScipyWrapperODESolver
 from .misc import _check_inputs, _flat_to_shape
 from .interp import _interp_evaluate
@@ -21,6 +22,7 @@ SOLVERS = {
     'fehlberg2': Fehlberg2,
     "adaptiveCR" : AdaptiveCRSolver,
     "adaptiveLobatto": AdaptiveLobattoSolver,
+    "adaptiveEuler": AdaptiveEulerSolver,
     'adaptive_heun': AdaptiveHeunSolver,
     'euler': Euler,
     'midpoint': Midpoint,

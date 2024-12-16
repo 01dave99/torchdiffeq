@@ -3,50 +3,17 @@ import scipy as sci
 import torch
 import numpy as np
 
-class AdaptiveCRSolver(AdaptiveGridODESolver):
+class AdaptiveEulerSolver(AdaptiveGridODESolver):
     def __init__(self, func, y0, rtol, atol, step_size=None, theta=None, interp="linear", perturb=False, **unused_kwargs):
         super().__init__(func, y0, atol, step_size, theta, interp, perturb, **unused_kwargs)
 
     def _step_func(self, func, t0, dt, t1, y0):
-        y0_np=y0.detach().cpu().numpy().reshape(-1)
-        t0_np=t0.detach().cpu().numpy().reshape(-1)
-        t1_np=t1.detach().cpu().numpy().reshape(-1)
-        def np_func(t, y):
-            t = torch.tensor(t).to(y0.device, y0.dtype)
-            y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0.shape)
-            with torch.no_grad():
-                f = func(t, y)
-            return f.detach().cpu().numpy().reshape(-1)
-        def optim_f(y):
-            return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np,options={'xtol':1e-10})
-        #print(root['success'])
-        tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0.shape)
-        return tr, func(t0,y0)
+        f0 = func(t0, y0)
+        return y0+ dt * f0, f0
     
     def _step_func_adjoint(self, func, t0, dt, t1, y0):
-        num_paras=sum(p.numel() for p in self.adjoint_params)
-        y0_np=y0[range(len(y0)-num_paras)].detach().cpu().numpy().reshape(-1)
-        t0_np=t0.detach().cpu().numpy().reshape(-1)
-        t1_np=t1.detach().cpu().numpy().reshape(-1)
-        dt=t1_np-t0_np
-        def np_func(t, y):
-            t = torch.tensor(t).to(y0.device, y0.dtype)
-            y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
-            with torch.no_grad():
-                yfull=torch.cat((y,torch.zeros(num_paras)))
-                f = func(t, yfull)[range(len(y0)-num_paras)]
-            return f.detach().cpu().numpy().reshape(-1)
-        def optim_f(y):
-            return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np,tol=1e-14)
-        tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
-        #restlichen variablen:
-        frest0=func(t0,y0)[range(-num_paras,0)]
-        frest1=func(t1,torch.cat((tr,torch.zeros(num_paras))))[range(-num_paras,0)]
-        rest=y0[range(-num_paras,0)]+torch.tensor(dt,dtype=y0.dtype)*(0.5*frest0+0.5*frest1)
-        result=torch.cat((tr,rest))
-        return result, func(t0,y0)
+        f0 = func(t0, y0)
+        return y0+ dt * f0, f0
 
     def eval_estimator(self, t0, dt, t1, y0, y1):
         y0_np=y0.detach().cpu().numpy().reshape(-1)

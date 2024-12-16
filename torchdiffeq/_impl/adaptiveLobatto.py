@@ -143,3 +143,61 @@ class AdaptiveLobattoSolver(AdaptiveGridODESolver):
             return value 
         esti=sci.integrate.fixed_quad(integrand,t0_np,t1_np)
         return torch.tensor(((t1_np-t0_np)**2)*abs(esti[0])).to(y0.device, y0.dtype)
+    
+    def eval_estimator_eff(self,t0,dt,t1,y0,y1):
+        y0_np=y0.detach().cpu().numpy().reshape(-1)
+        y1_np=y1.detach().cpu().numpy().reshape(-1)
+        t0_np=t0.detach().cpu().numpy().reshape(-1)
+        t1_np=t1.detach().cpu().numpy().reshape(-1)
+        thalf=(t0_np+t1_np)/2.
+
+        def np_func(t, y):
+            t = torch.tensor(t).to(y0.device, y0.dtype)
+            y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0.shape)
+            with torch.no_grad():
+                f = self.func(t, y)
+            return f.detach().cpu().numpy().reshape(-1)
+        
+
+        def interpolant(t):
+            return y0_np*(t-thalf)*(t-t1_np)/((t0_np-thalf)*(t0_np-t1_np))+self.yhalf*(t-t0_np)*(t-t1_np)/((thalf-t0_np)*(thalf-t1_np))+y1_np*(t-t0_np)*(t-thalf)/((t1_np-t0_np)*(t1_np-thalf))
+        def dt_interpolant(t):
+            return y0_np*((t-thalf)+(t-t1_np))/((t0_np-thalf)*(t0_np-t1_np))+self.yhalf*((t-t0_np)+(t-t1_np))/((thalf-t0_np)*(thalf-t1_np))+y1_np*((t-t0_np)+(t-thalf))/((t1_np-t0_np)*(t1_np-thalf))
+        
+        def integrand(s):
+            value=np.zeros(len(s))
+            for i in range(len(s)):
+                value[i]=(np.linalg.norm(dt_interpolant(s[i])-np_func(s[i],interpolant(s[i]))))**2
+            return value
+        esti=sci.integrate.fixed_quad(integrand,t0_np,t1_np)
+        return torch.tensor(esti[0]).to(y0.device, y0.dtype)
+    
+    def eval_estimator_eff_adjoint(self,t0,dt,t1,y0,y1):
+        num_paras=sum(p.numel() for p in self.adjoint_params)
+        y0_np=y0[range(len(y0)-num_paras)].detach().cpu().numpy().reshape(-1)
+        y1_np=y1[range(len(y0)-num_paras)].detach().cpu().numpy().reshape(-1)
+        yhalf=self.yhalf[range(len(y0)-num_paras)]
+        t0_np=t0.detach().cpu().numpy().reshape(-1)
+        t1_np=t1.detach().cpu().numpy().reshape(-1)
+        thalf=(t0_np+t1_np)/2.
+
+        def np_func(t, y):
+            t = torch.tensor(t).to(y0.device, y0.dtype)
+            y = torch.reshape(torch.tensor(y).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
+            with torch.no_grad():
+                yfull=torch.cat((y,torch.zeros(num_paras)))
+                f = self.func(t, yfull)[range(len(y0)-num_paras)]
+            return f.detach().cpu().numpy().reshape(-1)
+        
+        def interpolant(t):
+            return y0_np*(t-thalf)*(t-t1_np)/((t0_np-thalf)*(t0_np-t1_np))+yhalf*(t-t0_np)*(t-t1_np)/((thalf-t0_np)*(thalf-t1_np))+y1_np*(t-t0_np)*(t-thalf)/((t1_np-t0_np)*(t1_np-thalf))
+        def dt_interpolant(t):
+            return y0_np*((t-thalf)+(t-t1_np))/((t0_np-thalf)*(t0_np-t1_np))+yhalf*((t-t0_np)+(t-t1_np))/((thalf-t0_np)*(thalf-t1_np))+y1_np*((t-t0_np)+(t-thalf))/((t1_np-t0_np)*(t1_np-thalf))
+        
+        def integrand(s):
+            value=np.zeros(len(s))
+            for i in range(len(s)):
+                value[i]=(np.linalg.norm(dt_interpolant(s[i])-np_func(s[i],interpolant(s[i]))))**2
+            return value
+        esti=sci.integrate.fixed_quad(integrand,t0_np,t1_np)
+        return torch.tensor(esti[0]).to(y0.device, y0.dtype)

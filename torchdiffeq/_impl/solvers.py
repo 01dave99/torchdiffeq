@@ -184,7 +184,7 @@ class FixedGridODESolver(metaclass=abc.ABCMeta):
 
 class AdaptiveGridODESolver(FixedGridODESolver):
 
-    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, initial_grid=None,save_last_grid=False, faster_adj_solve=False,adjoint_params=None, conv_ana=False,file_id="None",max_nodes=100000,original_func=None,t_requires_grad=False,shapes=None, **unused_kwargs):
+    def __init__(self, func, y0, atol, step_size, theta, interp="linear", perturb=False, initial_grid=None,save_last_grid=False, faster_adj_solve=False,adjoint_params=None, conv_ana=False,file_id="None",max_nodes=100000,original_func=None,t_requires_grad=False,shapes=None,efficient=False, **unused_kwargs):
         self.atol = atol
         unused_kwargs.pop('rtol', None)
         unused_kwargs.pop('norm', None)
@@ -208,6 +208,7 @@ class AdaptiveGridODESolver(FixedGridODESolver):
         self.adjoint_params=adjoint_params
         self.max_nodes=max_nodes
         self.yhalf=None
+        self.efficient=efficient
         if original_func is not None:
             self.original_func=_ReverseFunc(original_func, mul=-1.0)
             def augmented_dynamics_temp(t, y_aug):
@@ -298,6 +299,14 @@ class AdaptiveGridODESolver(FixedGridODESolver):
     def eval_estimator_adjoint(self,t0,dt,t1,y0,y1):
         pass
 
+    @abc.abstractmethod
+    def eval_estimator_eff(self,t0,dt,t1,y0,y1):
+        pass
+
+    @abc.abstractmethod
+    def eval_estimator_eff_adjoint(self,t0,dt,t1,y0,y1):
+        pass
+
     @staticmethod
     def refine_grid(self,grid,estis):
         if self.theta==1.:
@@ -346,12 +355,20 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                 dt = t1 - t0
                 self.func.callback_step(t0, y0, dt)
                 
-                if self.faster_adj_solve:
-                    y1, f0 = self._step_func_adjoint(self.func, t0, dt, t1, y0)
-                    estis[i] = self.eval_estimator_adjoint(t0 , dt , t1, y0, y1)
+                if self.efficient:
+                    if self.faster_adj_solve:
+                        y1, f0 = self._step_func_adjoint(self.func, t0, dt, t1, y0)
+                        estis[i] = self.eval_estimator_eff_adjoint(t0 , dt , t1, y0, y1)
+                    else:
+                        y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
+                        estis[i] = self.eval_estimator_eff(t0 , dt , t1, y0, y1)
                 else:
-                    y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
-                    estis[i] = self.eval_estimator(t0 , dt , t1, y0, y1)
+                    if self.faster_adj_solve:
+                        y1, f0 = self._step_func_adjoint(self.func, t0, dt, t1, y0)
+                        estis[i] = self.eval_estimator_adjoint(t0 , dt , t1, y0, y1)
+                    else:
+                        y1, f0 = self._step_func(self.func, t0, dt, t1, y0)
+                        estis[i] = self.eval_estimator(t0 , dt , t1, y0, y1)
                 if self.conv_ana:
                     if self.yhalf is not None:
                         sol_grid[2*i+1]=torch.reshape(torch.tensor(self.yhalf).to(y0.device, y0.dtype), y0.shape)
