@@ -10,6 +10,7 @@ from .dopri8 import Dopri8Solver
 from .adaptiveCR import AdaptiveCRSolver
 from .adaptiveLobatto import AdaptiveLobattoSolver
 from .adaptiveEuler import AdaptiveEulerSolver
+from .adaptiveRK4 import AdaptiveRK4Solver
 from .scipy_wrapper import ScipyWrapperODESolver
 from .misc import _check_inputs, _flat_to_shape
 from .interp import _interp_evaluate
@@ -23,6 +24,7 @@ SOLVERS = {
     "adaptiveCR" : AdaptiveCRSolver,
     "adaptiveLobatto": AdaptiveLobattoSolver,
     "adaptiveEuler": AdaptiveEulerSolver,
+    "adaptiveRK4": AdaptiveRK4Solver,
     'adaptive_heun': AdaptiveHeunSolver,
     'euler': Euler,
     'midpoint': Midpoint,

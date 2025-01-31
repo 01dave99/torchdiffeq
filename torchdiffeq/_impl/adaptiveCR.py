@@ -19,7 +19,7 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
             return f.detach().cpu().numpy().reshape(-1)
         def optim_f(y):
             return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np,options={'xtol':1e-10})
+        root=sci.optimize.root(optim_f,y0_np)
         #print(root['success'])
         tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0.shape)
         return tr, func(t0,y0)
@@ -39,7 +39,7 @@ class AdaptiveCRSolver(AdaptiveGridODESolver):
             return f.detach().cpu().numpy().reshape(-1)
         def optim_f(y):
             return y-y0_np-(t1_np-t0_np)*(np_func(t1_np,y)+np_func(t0_np,y0_np))/2
-        root=sci.optimize.root(optim_f,y0_np,tol=1e-14)
+        root=sci.optimize.root(optim_f,y0_np)
         tr=torch.reshape(torch.tensor(root["x"]).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
         #restlichen variablen:
         frest0=func(t0,y0)[range(-num_paras,0)]

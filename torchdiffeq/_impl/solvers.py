@@ -372,9 +372,9 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                 if self.conv_ana:
                     if self.yhalf is not None:
                         sol_grid[2*i+1]=torch.reshape(torch.tensor(self.yhalf).to(y0.device, y0.dtype), y0.shape)
-                        sol_grid[2*i+2]=y1
+                        sol_grid[2*i+2]=y1.detach().clone()
                     else:    
-                        sol_grid[i+1]=y1
+                        sol_grid[i+1]=y1.detach().clone()
                 i=i+1
                 while j < len(t) and t1 >= t[j] and t0 < t[j]:
                     if self.interp == "linear":
@@ -402,10 +402,10 @@ class AdaptiveGridODESolver(FixedGridODESolver):
                 grids=torch.cat((grids,time_grid.detach().clone()))
                 if torch.max(estis_per)<torch.inf:
                     estis_per=torch.cat((estis_per,torch.tensor([torch.sum(estis)])))
-                    sols.append(sol_grid.detach().clone())
+                    sols.append(sol_grid.detach().clone().requires_grad_(False))
                 else:
                     estis_per=torch.tensor([torch.sum(estis)])
-                    sols=[sol_grid.detach().clone()]
+                    sols=[sol_grid.detach().clone().requires_grad_(False)]
         if self.conv_ana:
             Path("results/").mkdir(parents=True, exist_ok=True)
             sols=torch.cat(sols,dim=0)

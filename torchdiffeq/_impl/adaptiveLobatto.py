@@ -26,7 +26,7 @@ class AdaptiveLobattoSolver(AdaptiveGridODESolver):
            f2 = np_func(t1_np,y0_np+dt*(4/24* k0+16/24*k1+4/24*k2))
            f = np.concatenate((f1,f2))
            return k-f
-        k=sci.optimize.root(optim_f,[np_func(t0_np,y0_np),np_func(t0_np,y0_np)],options={'xtol':1e-10})
+        k=sci.optimize.root(optim_f,[np_func(t0_np,y0_np),np_func(t0_np,y0_np)])
         y1=y0_np+dt*(4/24* np_func(t0_np,y0_np)+16/24*k["x"][0:len(y0_np)]+4/24*k["x"][len(y0_np):2*len(y0_np)])
         self.yhalf=y0_np+dt*(5/24* np_func(t0_np,y0_np)+8/24*k["x"][0:len(y0_np)]-1/24*k["x"][len(y0_np):2*len(y0_np)])
         tr=torch.reshape(torch.tensor(y1).to(y0.device, y0.dtype), y0.shape)
@@ -53,7 +53,7 @@ class AdaptiveLobattoSolver(AdaptiveGridODESolver):
            f2 = np_func(t1_np,y0_np+dt*(4/24* k0+16/24*k1+4/24*k2))
            f = np.concatenate((f1,f2))
            return k-f
-        k=sci.optimize.root(optim_f,[np_func(t0_np,y0_np),np_func(t0_np,y0_np)],options={'xtol':1e-10})
+        k=sci.optimize.root(optim_f,[np_func(t0_np,y0_np),np_func(t0_np,y0_np)])
         y1=y0_np+dt*(4/24* np_func(t0_np,y0_np)+16/24*k["x"][0:len(y0_np)]+4/24*k["x"][len(y0_np):2*len(y0_np)])
         tr=torch.reshape(torch.tensor(y1).to(y0.device, y0.dtype), y0[range(len(y0)-num_paras)].shape)
         yhalf=y0_np+dt*(5/24* np_func(t0_np,y0_np)+8/24*k["x"][0:len(y0_np)]-1/24*k["x"][len(y0_np):2*len(y0_np)])
