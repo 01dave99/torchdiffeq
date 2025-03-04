@@ -11,6 +11,7 @@ from .adaptiveCR import AdaptiveCRSolver
 from .adaptiveLobatto import AdaptiveLobattoSolver
 from .adaptiveEuler import AdaptiveEulerSolver
 from .adaptiveRK4 import AdaptiveRK4Solver
+from .adaptiveMidpoint import AdaptiveMidpointSolver
 from .scipy_wrapper import ScipyWrapperODESolver
 from .misc import _check_inputs, _flat_to_shape
 from .interp import _interp_evaluate
@@ -25,6 +26,7 @@ SOLVERS = {
     "adaptiveLobatto": AdaptiveLobattoSolver,
     "adaptiveEuler": AdaptiveEulerSolver,
     "adaptiveRK4": AdaptiveRK4Solver,
+    "adaptiveMidpoint": AdaptiveMidpointSolver,
     'adaptive_heun': AdaptiveHeunSolver,
     'euler': Euler,
     'midpoint': Midpoint,
